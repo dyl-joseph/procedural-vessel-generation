@@ -31,6 +31,31 @@ All versions share:
 - Random canvas shape and size: circle, oval, square or rectangle, 320-768 px
 - Vessel widths from Murray's law (tapering by downstream leaf count) with random thickness variation
 
+## Generate a sharded dataset
+
+```bash
+python generate_dataset.py --out /path/to/vessels -n 10000 --workers 4
+```
+
+Each sample has a colored WebP image and a binary PNG mask. Files are sharded into folders of 1,000 samples. `manifest.csv` records the index, preset, seed, canvas shape, dimensions, palette, and vessel fraction. Re-running skips complete samples.
+
+To generate harder examples in a fresh output directory:
+
+```bash
+python generate_dataset.py --out /path/to/harder-vessels -n 10000 --workers 4 \
+  --res 2 --density 2 --bg-variation 0.15
+```
+
+`--res` multiplies canvas dimensions, `--density` increases attractor or branch counts, and `--bg-variation` adds color variation to the background. Their defaults, `1`, `1`, and `0`, preserve the original presets and rendering. Use a new directory when changing generation settings. Worker initialization applies the controls with either fork or spawn multiprocessing.
+
+To write a manifest for a completed prefix while generation continues:
+
+```bash
+python partial_manifest.py /path/to/vessels 1000 manifest_first1000.csv
+```
+
+The helper requires both image and mask files and reads their actual dimensions, including resized datasets.
+
 ## Input images
 
 - Background inside the canvas is a smooth color field within one of three ranges, split evenly across samples:

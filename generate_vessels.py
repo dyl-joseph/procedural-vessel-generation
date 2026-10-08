@@ -7,6 +7,10 @@ from pathlib import Path
 
 SIZE = 512
 OUT = Path(__file__).parent / "examples"
+# opt-in difficulty knobs (defaults reproduce the original generator exactly)
+RES = 1.0           # canvas size multiplier (vessel radii in px are unchanged, so trees get larger and relatively finer)
+DENSITY = 1.0       # multiplier on attractor / branch counts -> more vessels per canvas
+BG_VARIATION = 0.0  # 0 = smooth single-gradient background; >0 = per-channel multi-scale colour blotches of this amplitude
 
 
 def grow_tree(rng, n_attractors, n_roots, step=5.0, influence=75.0, kill=22.0, momentum=0.35, noise=0.25,
@@ -393,6 +397,13 @@ def render_input(rng, mask, inside, palette, blur=0.1):
     span = rng.uniform(0.3, 1.0)
     t = t * span + rng.uniform(0, 1 - span)
     bg = lo + t[..., None] * (hi - lo)
+    if BG_VARIATION:  # non-uniform background: independent multi-scale colour blotches per channel
+        for c in range(3):
+            f = np.zeros(mask.shape, np.float32)
+            for sig in rng.choice([4, 12, 30, 80], size=int(rng.integers(2, 4)), replace=False):
+                n = gaussian_filter(rng.standard_normal(mask.shape).astype(np.float32), float(sig))
+                f += rng.uniform(0.3, 1.0) * n / (n.std() + 1e-9)
+            bg[..., c] *= 1 + rng.uniform(0.3, 1.0) * BG_VARIATION * f / (f.std() + 1e-9)
     sigma = blur * 2 * distance_transform_edt(mask).max()
     soft = gaussian_filter(mask.astype(np.float32), sigma)
     contrast = rng.choice([-1, 1]) * rng.uniform(*((0.15, 0.20) if palette == 0 else (0.10, 0.15)))
@@ -417,11 +428,11 @@ def random_canvas(seed):
     shape = str(rng.choice(["circle", "oval", "square", "rectangle"]))
     if shape in ("circle", "square"):
         side = int(rng.integers(384, 769))
-        return shape, (side, side)
+        return shape, (int(round(side * RES)),) * 2
     while True:
         w, h = (int(v) for v in rng.integers(320, 769, 2))
         if max(w, h) / min(w, h) >= 1.3:
-            return shape, (w, h)
+            return shape, (int(round(w * RES)), int(round(h * RES)))
 
 
 def random_config(seed):
@@ -455,7 +466,7 @@ def random_config(seed):
     cfg.update(
         shape=shape,
         size=size,
-        n_attractors=int(cfg["n_attractors"] * density),
+        n_attractors=int(cfg["n_attractors"] * density * DENSITY),
         kill=cfg["kill"] * 1.7,
         sprout_p=cfg["sprout_p"] * 0.5,
         root_r=cfg["root_r"] * 0.8,
@@ -467,7 +478,7 @@ def v1_config(seed):
     rng = np.random.default_rng(4000 + seed)
     shape, size = random_canvas(seed)
     area = size[0] * size[1] / SIZE**2
-    return dict(seed=seed, n_attractors=int(rng.integers(30, 111) * area), n_roots=int(rng.integers(1, 4)),
+    return dict(seed=seed, n_attractors=int(rng.integers(30, 111) * area * DENSITY), n_roots=int(rng.integers(1, 4 + int(DENSITY > 1)) * max(1, round(DENSITY ** 0.5))),
                 root_r=rng.uniform(6.0, 8.0), influence=rng.uniform(140, 200), max_children=2,
                 shape=shape, size=size)
 
@@ -475,7 +486,7 @@ def v1_config(seed):
 def v3_config(seed):
     rng = np.random.default_rng(6000 + seed)
     shape, size = random_canvas(seed)
-    return dict(seed=seed, kind="coronary", trunk_len=rng.uniform(400, 620), n_side=int(rng.integers(2, 6)),
+    return dict(seed=seed, kind="coronary", trunk_len=rng.uniform(400, 620), n_side=int(rng.integers(2, 6) * DENSITY),
                 side_len=rng.uniform(80, 160), fork_p=rng.uniform(0.3, 0.8), hook_p=0.6,
                 root_r=rng.uniform(5.0, 8.0), gamma=rng.uniform(2.6, 3.4), r_min=rng.uniform(1.0, 1.6),
                 thick_var=rng.uniform(0.0, 0.04), shape=shape, size=size)
@@ -484,7 +495,7 @@ def v3_config(seed):
 def v4_config(seed):
     rng = np.random.default_rng(7000 + seed)
     shape, size = random_canvas(seed)
-    return dict(seed=seed, kind="fan", n_main=int(rng.integers(3, 7)), main_len=rng.uniform(250, 420),
+    return dict(seed=seed, kind="fan", n_main=int(rng.integers(3, 7) * DENSITY), main_len=rng.uniform(250, 420),
                 split_p=rng.uniform(0.03, 0.1), twig_p=rng.uniform(0.08, 0.2),
                 root_r=rng.uniform(6.0, 10.0), gamma=rng.uniform(3.5, 4.5), r_min=rng.uniform(1.8, 2.6),
                 thick_var=rng.uniform(0.0, 0.05), shape=shape, size=size)
@@ -493,7 +504,7 @@ def v4_config(seed):
 def v5_config(seed):
     rng = np.random.default_rng(8000 + seed)
     shape, size = random_canvas(seed)
-    return dict(seed=seed, kind="retina", density=rng.uniform(500, 900), arcade_len=rng.uniform(0.35, 0.55),
+    return dict(seed=seed, kind="retina", density=rng.uniform(500, 900) * DENSITY, arcade_len=rng.uniform(0.35, 0.55),
                 n_nasal=int(rng.integers(2, 4)), macula_r=rng.uniform(0.05, 0.09), step=rng.uniform(4, 5.5),
                 influence=rng.uniform(60, 90), kill=rng.uniform(20, 28), noise=rng.uniform(0.25, 0.45),
                 open_p=rng.uniform(0.06, 0.12),
